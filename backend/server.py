@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 from typing import List, Optional
 import uuid
 from datetime import datetime
-from audit_engine import SolidityAuditor
+from backend.audit_engine import SolidityAuditor
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -94,20 +94,33 @@ async def analyze_contract_file(file: UploadFile = File(...)):
         
         # Read file content
         contract_code = await file.read()
-        contract_code = contract_code.decode('utf-8')
-        
+        try:
+            contract_code = contract_code.decode('utf-8')
+        except UnicodeDecodeError:
+            raise HTTPException(status_code=400, detail="File encoding not supported. Please use UTF-8.")
+
+        if not contract_code.strip():
+            raise HTTPException(status_code=400, detail="Uploaded file is empty.")
+
         # Perform analysis
-        analysis_result = auditor.analyze_contract(contract_code)
-        
+        try:
+            analysis_result = auditor.analyze_contract(contract_code)
+        except Exception as e:
+            logging.exception("Error during contract analysis")
+            raise HTTPException(status_code=500, detail=f"Contract analysis failed: {str(e)}")
+
         # Save to database
-        audit_record = AuditHistory(
-            contract_code=contract_code,
-            filename=file.filename,
-            analysis_result=analysis_result
-        )
-        
-        await db.audit_history.insert_one(audit_record.dict())
-        
+        try:
+            audit_record = AuditHistory(
+                contract_code=contract_code,
+                filename=file.filename,
+                analysis_result=analysis_result
+            )
+            await db.audit_history.insert_one(audit_record.dict())
+        except Exception as e:
+            logging.exception("Error saving audit record to database")
+            raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
+
         return {
             "id": audit_record.id,
             "summary": analysis_result["summary"],
@@ -116,11 +129,11 @@ async def analyze_contract_file(file: UploadFile = File(...)):
             "timestamp": audit_record.timestamp.isoformat(),
             "filename": file.filename
         }
-        
-    except UnicodeDecodeError:
-        raise HTTPException(status_code=400, detail="File encoding not supported. Please use UTF-8.")
+
+    except HTTPException:
+        raise
     except Exception as e:
-        logging.error(f"Error analyzing file: {str(e)}")
+        logging.exception("Unexpected error in analyze_contract_file")
         raise HTTPException(status_code=500, detail=f"File analysis failed: {str(e)}")
 
 @api_router.get("/history")

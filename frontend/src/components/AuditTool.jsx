@@ -342,25 +342,22 @@ contract Example {
             </CardHeader>
             <CardContent>
               <div className="space-y-3 max-h-[400px] overflow-y-auto">
-                {auditHistory.map((item, index) => (
-                  <div 
-                    key={item.id}
-                    className="p-3 bg-slate-900/50 rounded-lg cursor-pointer hover:bg-slate-900/70 transition-colors"
-                    onClick={() => loadHistoryItem(item.id)}
-                  >
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-sm font-medium text-slate-200 truncate">
-                        {item.filename}
-                      </span>
-                      <Badge variant="outline" className="text-xs">
-                        {item.vulnerabilities_count} issues
-                      </Badge>
+                {auditHistory.map((item, index) => {
+                  const highlight = item.vulnerabilities_count > 0 || item.summary.securityScore < 100;
+                  return (
+                    <div 
+                      key={item.id}
+                      className={`p-3 rounded-lg cursor-pointer transition-colors mb-2 ${highlight ? 'bg-yellow-100/80 border-2 border-yellow-400 shadow-md' : 'bg-slate-900/50 border border-slate-700'} hover:bg-yellow-200/80`}
+                      onClick={() => loadHistoryItem(item.id)}
+                    >
+                      <div className="flex items-center justify-between mb-2">
+                        <span className={`text-sm font-medium truncate ${highlight ? 'text-yellow-800 font-bold' : 'text-slate-200'}`}>{item.filename}</span>
+                        <Badge variant="outline" className={`text-xs ${highlight ? 'bg-yellow-300 text-yellow-900 border-yellow-500' : ''}`}>{item.vulnerabilities_count} issues</Badge>
+                      </div>
+                      <div className={`text-xs ${highlight ? 'text-yellow-800 font-semibold' : 'text-slate-400'}`}>Score: {item.summary.securityScore}/100 • {new Date(item.timestamp).toLocaleDateString()}</div>
                     </div>
-                    <div className="text-xs text-slate-400">
-                      Score: {item.summary.securityScore}/100 • {new Date(item.timestamp).toLocaleDateString()}
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
                 {auditHistory.length === 0 && (
                   <div className="text-center py-8">
                     <History className="h-12 w-12 text-slate-600 mx-auto mb-2" />
