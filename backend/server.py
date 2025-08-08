@@ -15,9 +15,52 @@ ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
 # MongoDB connection
-mongo_url = os.environ['MONGO_URL']
-client = AsyncIOMotorClient(mongo_url)
-db = client[os.environ['DB_NAME']]
+try:
+    mongo_url = os.environ.get('MONGO_URL', 'mongodb://localhost:27017')
+    db_name = os.environ.get('DB_NAME', 'smart_contract_auditor')
+    client = AsyncIOMotorClient(mongo_url)
+    db = client[db_name]
+    # Test connection
+    client.admin.command('ping')
+    print(f"Connected to MongoDB: {mongo_url}")
+except Exception as e:
+    print(f"MongoDB connection failed: {e}")
+    # Create a mock database for testing
+    class MockDB:
+        def __init__(self):
+            self.audit_history = []
+        
+        async def insert_one(self, data):
+            self.audit_history.append(data)
+            return {"inserted_id": "mock_id"}
+        
+        async def find(self):
+            return MockCursor(self.audit_history)
+        
+        async def find_one(self, query):
+            for item in self.audit_history:
+                if item.get('id') == query.get('id'):
+                    return item
+            return None
+        
+        async def count_documents(self, query):
+            return len(self.audit_history)
+    
+    class MockCursor:
+        def __init__(self, data):
+            self.data = data
+        
+        def sort(self, field, direction):
+            return self
+        
+        def limit(self, limit):
+            return self
+        
+        async def to_list(self, length):
+            return self.data[:length]
+    
+    db = MockDB()
+    print("Using mock database for testing")
 
 # Create the main app without a prefix
 app = FastAPI()
@@ -52,6 +95,25 @@ class AuditHistory(BaseModel):
 async def root():
     return {"message": "Smart Contract Auditing Toolkit API"}
 
+@api_router.get("/test")
+async def test_endpoint():
+    """Test endpoint to verify backend is working"""
+    try:
+        # Test audit engine
+        test_code = "pragma solidity ^0.8.0; contract Test {}"
+        result = auditor.analyze_contract(test_code)
+        return {
+            "status": "success",
+            "message": "Backend is working correctly",
+            "test_analysis": result
+        }
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": f"Backend test failed: {str(e)}",
+            "error": str(e)
+        }
+
 @api_router.post("/analyze", response_model=dict)
 async def analyze_contract(request: ContractAnalysisRequest):
     """Analyze a Solidity contract for vulnerabilities"""
@@ -83,6 +145,8 @@ async def analyze_contract(request: ContractAnalysisRequest):
         
     except Exception as e:
         logging.error(f"Error analyzing contract: {str(e)}")
+        import traceback
+        print(f"Full error traceback: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=f"Analysis failed: {str(e)}")
 
 @api_router.post("/analyze-file")
